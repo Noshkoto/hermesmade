@@ -1,0 +1,1 @@
+{ "name": "hermesmade", "label": "hermesmade bots", "api": "plugin_api.py", "tab": { "path": "/hermesmade", "hidden": true } }

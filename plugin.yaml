@@ -1,0 +1,18 @@
+name: hermesmade
+label: hermesmade bots
+kind: standalone
+version: 1.0.0
+manifest_version: 2
+description: >
+  Share your Hermes bots to the community shelf at hermesmade.lol and add other
+  people's bots in one click. /sharebot builds a sanitized profile distribution
+  (no keys, tokens, memories or chats), shows exactly what ships, and uploads
+  after you confirm. Added bots arrive with schedules paused and MCP servers off.
+author: "@HermesAgentTips"
+license: MIT
+homepage: https://hermesmade.lol/bots
+requires_hermes: ">=0.22.0"
+provides_tools:
+  - hermesmade_bots
+provides_hooks: []
+tags: [bots, profiles, sharing, community, desktop]
