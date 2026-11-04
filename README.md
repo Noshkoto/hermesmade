@@ -3,7 +3,7 @@
 Share your Hermes bots to [hermesmade.lol/bots](https://hermesmade.lol/bots) and add other people's bots in one click.
 
 ```bash
-hermes plugins install https://hermesmade.lol/plugin.git --enable
+curl -fsSL https://hermesmade.lol/install.sh | sh
 ```
 
 ## Share a bot
