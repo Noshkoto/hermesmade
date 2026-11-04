@@ -115,7 +115,7 @@ def _fmt_install(out: dict) -> str:
 def _setup_cli(parser) -> None:
     sub = parser.add_subparsers(dest="hm_action")
     s = sub.add_parser("share", help="Preview and share a bot (profile) to hermesmade.lol")
-    s.add_argument("--profile", "-p", default=None, help="Profile to share (default: active)")
+    s.add_argument("--bot", "--profile", dest="profile", default=None, help="Bot (profile) to share (default: active)")
     s.add_argument("--handle", default="", help="Your @handle for credit")
     s.add_argument("--title", default="")
     s.add_argument("--tagline", default="")

@@ -15,7 +15,7 @@ In any chat with the bot:
 /sharebot yes @yourhandle
 ```
 
-or `hermes hermesmade share -p <profile>`, or **Community bots → Share a bot** in the desktop app.
+or `hermes hermesmade share --bot <name>`, or **Community bots → Share a bot** in the desktop app.
 
 You see the exact file list before anything uploads. A shared bot is a Hermes profile
 distribution: `SOUL.md`, a cleaned `config.yaml`, your own skills, and schedules.

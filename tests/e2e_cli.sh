@@ -35,7 +35,7 @@ echo "OPENROUTER_API_KEY=sk-or-v1-$(printf 'k%.0s' {1..48})" >> "$P/.env"
 echo "## untitled default must refuse"
 run "$A" hermesmade share --dry-run | tail -1
 echo "## share gardener"
-run "$A" hermesmade share -p gardener --handle nosh --tagline "Plans your garden by frost date." --yes | tail -3
+run "$A" hermesmade share --bot gardener --handle nosh --tagline "Plans your garden by frost date." --yes | tail -3
 ID=$(python3 -c "import json;print(list(json.load(open('$A/.hermes/hermesmade/shared.json')).values())[0]['id'])")
 echo "bot id $ID"
 grep -c manage_token "$A/.hermes/hermesmade/shared.json" >/dev/null && echo "manage token stored locally ($(stat -c %a "$A/.hermes/hermesmade/shared.json"))"
