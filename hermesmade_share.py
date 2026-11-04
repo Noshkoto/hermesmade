@@ -510,7 +510,7 @@ def upload(plan: dict, handle: str) -> dict:
 
 def fetch_info(bot_id: str) -> dict:
     bot_id = str(bot_id).strip()
-    m = re.search(r"(?:/bots/|/add/)?(\d+)", bot_id)
+    m = re.search(r"/(?:bots|add)/(\d+)", bot_id) or re.search(r"[?&]add=(\d+)", bot_id) or re.fullmatch(r"#?(\d+)(?:-[a-z0-9-]*)?", bot_id)
     if not m:
         raise ShareError("Give a bot id or a hermesmade.lol/bots/... link.")
     code, raw = _request("GET", f"/api/bots/{m.group(1)}")
