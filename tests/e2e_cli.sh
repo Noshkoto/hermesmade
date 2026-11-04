@@ -16,10 +16,13 @@ for who in author installer; do
   printf 'model:\n  provider: nous\n  default: model-of-%s\n' "$who" > "$H/config.yaml"
 done
 A="$SB/author"; I="$SB/installer"
-echo "## install plugin from $SITE/plugin.git (author)"
-run "$A" plugins install "$SITE/plugin.git" --enable --yes-deps | tail -4
-echo "## install plugin (installer)"
-run "$I" plugins install "$SITE/plugin.git" --enable --yes-deps | tail -2
+inst() { # home
+  mkdir -p "$1/bin"; printf '#!/bin/sh\ncd %s && exec %s/venv/bin/python -m hermes_cli.main "$@"\n' "$AG" "$AG" > "$1/bin/hermes"; chmod +x "$1/bin/hermes"
+  curl -fsSL "$SITE/install.sh" | env -i HOME="$1" PATH="$1/bin:/usr/bin:/bin" HERMESMADE_URL="$SITE" sh 2>&1 | grep -v "out of sync" | tail -3
+}
+echo "## curl install.sh | sh (author)"; inst "$A"
+echo "## curl install.sh | sh (installer)"; inst "$I"
+grep -A3 "^plugins:" "$A/.hermes/config.yaml"
 run "$A" profile create gardener --no-alias | tail -1
 P="$A/.hermes/profiles/gardener"
 cat > "$P/SOUL.md" <<'EOF'
