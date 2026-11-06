@@ -82,8 +82,8 @@ async function rest(path, opts) {
 // The desktop's security gate reads a body `profile` as "act as that profile" and refuses any
 // other bot, so the bot to pack travels as `bot_profile`.
 function wire(form) {
-  const { profile, ...rest } = form
-  return { ...rest, bot_profile: profile }
+  const { profile, ...fields } = form
+  return { ...fields, bot_profile: profile }
 }
 
 function switchToMain() {
