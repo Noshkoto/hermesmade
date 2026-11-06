@@ -73,3 +73,38 @@ async def share(body: dict):
 @router.get("/mine")
 async def mine():
     return H.my_shares()
+
+
+# ---------------------------------------------------- Grok Bot migration --
+def _grok(fn, *a, **kw):
+    import hermesmade_migrate as G
+    try:
+        return fn(G)(*a, **kw)
+    except G.MigrateError as e:
+        _err(e)
+
+
+@router.get("/grok/prompt")
+async def grok_prompt():
+    return {"prompt": await run_in_threadpool(_grok, lambda G: G.export_prompt),
+            "open_url": "https://x.ai/bot/link/v1/open"}
+
+
+@router.get("/grok/downloads")
+async def grok_downloads():
+    return {"files": await run_in_threadpool(_grok, lambda G: G.find_downloads)}
+
+
+@router.post("/grok/preview")
+async def grok_preview(body: dict):
+    return await run_in_threadpool(_grok, lambda G: G.preview, texts=[str(body.get("text") or "")] if body.get("text") else None,
+                                   files=list(body.get("files") or []) or None)
+
+
+@router.post("/grok/migrate")
+async def grok_migrate(body: dict):
+    out = await run_in_threadpool(
+        _grok, lambda G: G.migrate, texts=[str(body.get("text") or "")] if body.get("text") else None,
+        files=list(body.get("files") or []) or None, only=list(body.get("only") or []) or None,
+        names=dict(body.get("names") or {}), activate_routines=False)
+    return out

@@ -4,6 +4,7 @@ Surfaces (all call hermesmade_share):
   /sharebot [handle]              slash command, any surface (CLI, TUI, desktop, gateway)
   hermes hermesmade share|add|...  CLI
   hermesmade_bots tool             so the agent can do it when asked ("share this bot")
+  hermes hermesmade migrate-grok   move Grok Bot bots in (hermesmade_migrate, via agent-importers)
   desktop/plugin.js                Add-bot confirm page opened by hermes://open/hermesmade?add=<id>
   dashboard/plugin_api.py          backend for the desktop page
 """
@@ -131,6 +132,13 @@ def _setup_cli(parser) -> None:
     sub.add_parser("mine", help="List bots you've shared from this machine")
     u = sub.add_parser("unshare", help="Delete one of your listings")
     u.add_argument("name")
+    g = sub.add_parser("migrate-grok", help="Move your Grok Bot bots into Hermes, one Hermes bot each")
+    g.add_argument("--file", action="append", default=None,
+                   help="Export file or folder (repeatable; default: grok-bot-export*.json in Downloads, else paste)")
+    g.add_argument("--bot", action="append", default=None, help="Only this Grok Bot (repeatable)")
+    g.add_argument("--prompt", action="store_true", help="Print the export prompt to paste into each Grok Bot")
+    g.add_argument("--dry-run", action="store_true", help="Show what would be created, write nothing")
+    g.add_argument("--yes", "-y", action="store_true")
 
 
 def _handle_cli(args) -> None:
@@ -179,9 +187,63 @@ def _handle_cli(args) -> None:
         elif act == "unshare":
             H.unshare(args.name)
             print(f"Deleted listing {args.name}.")
+        elif act == "migrate-grok":
+            _migrate_grok_cli(args)
         else:
-            print("Usage: hermes hermesmade {share|add|mine|unshare} --help")
+            print("Usage: hermes hermesmade {share|add|mine|unshare|migrate-grok} --help")
     except H.ShareError as e:
+        print(f"error: {e}")
+        raise SystemExit(1)
+
+
+def _migrate_grok_cli(args) -> None:
+    import sys
+    import hermesmade_migrate as G
+    try:
+        if args.prompt:
+            print(G.export_prompt())
+            return
+        files, texts = args.file, None
+        if not files:
+            files = G.find_downloads() or None
+            if files:
+                print("Found in Downloads: " + ", ".join(files))
+        if not files:
+            print("Paste each Grok Bot's export reply below. Get it by pasting the prompt from\n"
+                  "`hermes hermesmade migrate-grok --prompt` into that Bot's chat (open Grok Bot:\n"
+                  "https://x.ai/bot/link/v1/open). Finish with Ctrl-D.\n")
+            texts = [sys.stdin.read()]
+        pv = G.preview(texts, files)
+        for b in pv["bots"]:
+            if args.bot and b["name"].lower() not in {x.lower() for x in args.bot}:
+                continue
+            verb = "tops up" if b["existing"] else "becomes"
+            print(f"\n{b['name']}  {verb} Hermes bot '{b['profile']}'")
+            print(f"  skills: {', '.join(b['skills']) or 'none'}")
+            print(f"  routines (arrive paused): {', '.join(b['routines']) or 'none'}")
+            if b["event_routines"]:
+                print(f"  event routines (saved as notes to rebuild): {', '.join(b['event_routines'])}")
+            print(f"  memories: {b['memories']}, facts about you: {b['user_facts']}")
+            if b["apps"]:
+                print(f"  apps: {', '.join(b['apps'])} (remote MCP URLs come over; logins stay in Grok Bot)")
+        if args.dry_run:
+            print("\nDry run: nothing written.")
+            return
+        if not args.yes and input("\nMigrate? [y/N] ").strip().lower() not in ("y", "yes"):
+            print("Cancelled. Nothing written.")
+            return
+        out = G.migrate(texts, files, only=args.bot)
+        for r in out["results"]:
+            s = r["summary"]
+            print(f"\n{r['bot']} -> {r['profile']}  ({s.get('imported', 0)} imported, {s.get('skipped', 0)} skipped"
+                  f"{', %d conflicts' % s['conflict'] if s.get('conflict') else ''})")
+            if r["routines_paused"]:
+                print(f"  {r['routines_paused']} routine(s) paused: turn the Grok copy off, then "
+                      f"`hermes -p {r['profile']} cron resume <id>`")
+            for n in r["notes"]:
+                print(f"  note: {n}")
+            print(f"  chat: `hermes -p {r['profile']} chat`, or pick it in the desktop bot list")
+    except G.MigrateError as e:
         print(f"error: {e}")
         raise SystemExit(1)
 

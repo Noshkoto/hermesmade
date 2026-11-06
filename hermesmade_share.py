@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 SITE = os.environ.get("HERMESMADE_URL", "https://hermesmade.lol").rstrip("/")
 META_FILE = "hermesmade-bot.json"
-USER_AGENT = "hermesmade-plugin/1.0"
+USER_AGENT = "hermesmade-plugin/1.1"
 MAX_DOWNLOAD = 2_000_000
 MAX_PACKAGE = 1_500_000
 MAX_SKILL_BYTES = 400_000  # a single own-skill dir bigger than this is listed, not shipped

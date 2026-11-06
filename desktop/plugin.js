@@ -2,6 +2,7 @@
  * hermesmade: add community bots from hermesmade.lol, share your own.
  *
  * hermes://open/hermesmade?add=<id>  -> this page, Add tab, preloaded with the bot.
+ * hermes://open/hermesmade?tab=grok  -> the Grok Bot migration steps.
  * Nothing installs or uploads without an explicit click here. Backend lives in
  * the same package: dashboard/plugin_api.py -> /api/plugins/hermesmade/*.
  *
@@ -284,6 +285,208 @@ function SharePane() {
   })
 }
 
+// ------------------------------------------------------------- grok bot --
+// Grok Bot keeps bots in xAI's cloud with no export button, so each Bot exports itself:
+// copy the prompt, open Grok Bot, paste it in the Bot's chat, bring the reply back here.
+// The official agent-importers plugin does the reading; nothing here talks to xAI.
+// x.ai's own "Open Grok Bot" handoff page (it launches grokbot://app/v1/open, or offers the download).
+const GROK_OPEN_WEB = 'https://x.ai/bot/link/v1/open'
+
+const CHECK = jsx('svg', { viewBox: '0 0 24 24', width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-label': 'done', children: jsx('path', { d: 'm5 12.5 4.2 4.2L19 7' }) })
+
+function Step({ n, title, children, done }) {
+  return jsxs('div', {
+    style: { ...box, display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: 12, opacity: done ? 0.7 : 1 },
+    children: [
+      jsx('span', { style: { fontFamily: 'var(--font-mono, ui-monospace)', fontSize: 12, color: done ? c.green : c.accent, paddingTop: 2 }, children: done ? CHECK : String(n).padStart(2, '0') }),
+      jsxs('div', { style: { display: 'grid', gap: 10, minWidth: 0 }, children: [jsx('p', { style: { margin: 0, color: c.primary, fontWeight: 600 }, children: title }), children] })
+    ]
+  })
+}
+
+function GrokPane() {
+  const [prompt, setPrompt] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [opened, setOpened] = useState(false)
+  const [text, setText] = useState('')
+  const [files, setFiles] = useState([])
+  const [st, setSt] = useState({ phase: 'idle' })
+  const [names, setNames] = useState({})
+  const [skip, setSkip] = useState({})
+
+  useEffect(() => {
+    CTX.rest('/grok/prompt', { timeoutMs: 300000 })
+      .then(r => setPrompt(r.prompt))
+      .catch(e => setSt({ phase: 'error', error: errText(e) }))
+    CTX.rest('/grok/downloads').then(r => setFiles(r.files || [])).catch(() => {})
+  }, [])
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      host.notify({ kind: 'error', message: 'Could not copy. Select the prompt and copy it.' })
+    }
+  }
+
+  const openGrok = async () => {
+    setOpened(true)
+    try {
+      await CTX.os.openExternal(GROK_OPEN_WEB)
+    } catch {
+      /* the web link hands off to the app via grokbot:// */
+    }
+  }
+
+  const source = () => (text.trim() ? { text } : { files })
+
+  const check = async () => {
+    setSt({ phase: 'reading' })
+    try {
+      const pv = await CTX.rest('/grok/preview', { method: 'POST', body: source(), timeoutMs: 120000 })
+      setNames(Object.fromEntries(pv.bots.map(b => [b.name, b.profile])))
+      setSt({ phase: 'preview', pv })
+    } catch (e) {
+      setSt({ phase: 'error', error: errText(e) })
+    }
+  }
+
+  const run = async () => {
+    const pv = st.pv
+    const only = pv.bots.filter(b => !skip[b.name]).map(b => b.name)
+    setSt(s => ({ ...s, phase: 'migrating' }))
+    try {
+      const out = await CTX.rest('/grok/migrate', {
+        method: 'POST',
+        body: { ...source(), only, names: Object.fromEntries(pv.bots.filter(b => !b.existing).map(b => [b.name, names[b.name]])) },
+        timeoutMs: 300000
+      })
+      setSt(s => ({ ...s, phase: 'done', out }))
+      sdk.haptic?.('success')
+      host.notify({ kind: 'success', message: `Moved ${out.results.length} bot${out.results.length === 1 ? '' : 's'} from Grok Bot` })
+      queryClient?.invalidateQueries?.({ queryKey: ['hermes-bots'] })
+    } catch (e) {
+      setSt(s => ({ ...s, phase: 'preview', error: errText(e) }))
+    }
+  }
+
+  const pv = st.pv
+  const haveInput = text.trim() || files.length
+
+  return jsxs('div', {
+    style: { display: 'grid', gap: 12, maxWidth: 760 },
+    children: [
+      jsx('p', { style: { margin: '0 0 4px', color: c.secondary, fontSize: 13, maxWidth: '62ch' }, children: 'Each Grok Bot becomes its own Hermes bot, with its instructions, skills, memories and routines. It runs on your Hermes model. Routines arrive paused so nothing runs twice, and your Grok Bots stay exactly as they are.' }),
+      jsx(Step, {
+        n: 1,
+        title: 'Copy the export prompt',
+        done: copied && opened,
+        children: jsxs('div', {
+          style: { display: 'grid', gap: 8 },
+          children: [
+            jsx('pre', { style: { margin: 0, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: 11.5, color: c.tertiary, fontFamily: 'var(--font-mono, ui-monospace)', border: `1px solid ${c.stroke}`, borderRadius: 8, padding: 10 }, children: prompt || 'Loading the prompt…' }),
+            jsx('div', { children: jsx(Button, { variant: 'secondary', disabled: !prompt, onClick: copy, children: copied ? 'Copied' : 'Copy prompt' }) })
+          ]
+        })
+      }),
+      jsx(Step, {
+        n: 2,
+        title: 'Open Grok Bot and paste it into each Bot\'s chat',
+        done: opened && haveInput,
+        children: jsxs('div', {
+          style: { display: 'grid', gap: 8 },
+          children: [
+            jsx('p', { style: { margin: 0, color: c.tertiary, fontSize: 13 }, children: 'The Bot replies with a JSON export and saves it to Downloads when it can. Repeat for every Bot you want to move.' }),
+            jsxs('div', {
+              style: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+              children: [
+                jsx(Button, { onClick: openGrok, children: 'Open Grok Bot' }),
+                jsx(Button, { variant: 'ghost', onClick: () => CTX.rest('/grok/downloads').then(r => setFiles(r.files || [])), children: 'Check Downloads again' })
+              ]
+            })
+          ]
+        })
+      }),
+      jsx(Step, {
+        n: 3,
+        title: 'Bring the export back',
+        done: st.phase === 'done',
+        children: jsxs('div', {
+          style: { display: 'grid', gap: 8 },
+          children: [
+            files.length > 0 && jsx('p', { style: { margin: 0, color: c.green, fontSize: 13 }, children: `Found ${files.length} export${files.length === 1 ? '' : 's'} in Downloads.` }),
+            jsx(Textarea, { rows: 4, value: text, placeholder: files.length ? 'Or paste a Bot\'s reply here instead' : 'Paste the Bot\'s whole reply here (paste several replies one after another)', onChange: e => setText(e.target.value) }),
+            jsx('div', { children: jsx(Button, { variant: 'secondary', disabled: !haveInput || st.phase === 'reading', onClick: check, children: st.phase === 'reading' ? 'Reading…' : 'Review bots' }) })
+          ]
+        })
+      }),
+      st.phase === 'error' && jsx('p', { style: { color: c.red, margin: 0 }, children: st.error }),
+      pv &&
+        jsxs('div', {
+          style: { ...box, display: 'grid', gap: 14 },
+          children: [
+            ...pv.bots.map(b =>
+              jsxs('div', {
+                key: b.name,
+                style: { display: 'grid', gap: 8, paddingBottom: 12, borderBottom: `1px solid ${c.stroke}`, opacity: skip[b.name] ? 0.5 : 1 },
+                children: [
+                  jsxs('div', {
+                    style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+                    children: [
+                      jsx('input', { type: 'checkbox', checked: !skip[b.name], disabled: st.phase !== 'preview', onChange: e => setSkip(s => ({ ...s, [b.name]: !e.target.checked })), 'aria-label': `Move ${b.name}` }),
+                      jsx('strong', { style: { color: c.primary, fontSize: 15 }, children: b.name }),
+                      b.title && jsx('span', { style: { color: c.tertiary, fontSize: 13 }, children: b.title }),
+                      jsx('span', { style: { flex: 1 } }),
+                      b.existing
+                        ? jsx('span', { style: { color: c.tertiary, fontSize: 12 }, children: `adds new items to “${b.profile}”` })
+                        : jsx(Input, { value: names[b.name] || '', disabled: st.phase !== 'preview', onChange: e => setNames(n => ({ ...n, [b.name]: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })), style: { width: 180 }, 'aria-label': `Hermes name for ${b.name}` })
+                    ]
+                  }),
+                  jsxs('div', {
+                    style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 },
+                    children: [
+                      jsx(Section, { title: 'Skills', children: jsx(List, { items: b.skills, empty: 'None' }) }),
+                      jsx(Section, { title: 'Routines (paused)', children: jsx(List, { items: b.routines, empty: 'None' }) }),
+                      jsx(Section, { title: 'Memory', children: jsx(List, { items: [`${b.memories} memories`, `${b.user_facts} facts about you`], empty: '' }) }),
+                      (b.apps.length > 0 || b.event_routines.length > 0) &&
+                        jsx(Section, { title: 'To reconnect', children: jsx(List, { items: [...b.apps.map(a => `${a} (app)`), ...b.event_routines.map(r => `${r} (event routine, saved as notes)`)], empty: '' }) })
+                    ]
+                  })
+                ]
+              })
+            ),
+            st.phase !== 'done' &&
+              jsxs('div', {
+                style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+                children: [
+                  jsx(Button, { disabled: st.phase === 'migrating' || pv.bots.every(b => skip[b.name]), onClick: run, children: st.phase === 'migrating' ? 'Moving…' : 'Move to Hermes' }),
+                  jsx('span', { style: { color: c.tertiary, fontSize: 12 }, children: 'Never moves keys, passwords or app logins.' })
+                ]
+              }),
+            st.error && st.phase !== 'error' && jsx('p', { style: { color: c.red, margin: 0 }, children: st.error }),
+            st.phase === 'done' &&
+              jsxs('div', {
+                style: { display: 'grid', gap: 6 },
+                children: st.out.results.map(r =>
+                  jsxs('p', {
+                    key: r.profile,
+                    style: { margin: 0, color: c.secondary, fontSize: 13 },
+                    children: [
+                      jsx('span', { style: { color: c.green }, children: `${r.bot} is now “${r.profile}”. ` }),
+                      r.routines_paused > 0 ? `${r.routines_paused} routine(s) paused: turn the Grok copy off, then resume it from this bot's Cron tab. ` : '',
+                      r.notes.length ? r.notes.join(' ') : ''
+                    ]
+                  })
+                )
+              })
+          ]
+        })
+    ]
+  })
+}
+
 // ------------------------------------------------------------------ page --
 function Page() {
   const [tab, setTab] = useState('add')
@@ -297,8 +500,8 @@ function Page() {
       if (add) {
         setTab('add')
         setAddRef(add)
-      } else if (q.get('tab') === 'share') {
-        setTab('share')
+      } else if (q.get('tab') === 'share' || q.get('tab') === 'grok') {
+        setTab(q.get('tab'))
       }
     }
 
@@ -330,8 +533,8 @@ function Page() {
     children: [
       jsx('h1', { style: { margin: '0 0 4px', fontSize: 24, color: c.primary }, children: 'Community bots' }),
       jsx('p', { style: { margin: '0 0 18px', color: c.tertiary, fontSize: 13 }, children: 'Add bots people made on hermesmade.lol, or share one of yours.' }),
-      jsxs('div', { style: { borderBottom: `1px solid ${c.stroke}`, marginBottom: 18 }, children: [tabBtn('add', 'Add a bot'), tabBtn('share', 'Share a bot')] }),
-      tab === 'add' ? jsx(AddPane, { initial: addRef }) : jsx(SharePane, {})
+      jsxs('div', { style: { borderBottom: `1px solid ${c.stroke}`, marginBottom: 18 }, children: [tabBtn('add', 'Add a bot'), tabBtn('share', 'Share a bot'), tabBtn('grok', 'Move from Grok Bot')] }),
+      tab === 'add' ? jsx(AddPane, { initial: addRef }) : tab === 'grok' ? jsx(GrokPane, {}) : jsx(SharePane, {})
     ]
   })
 }
@@ -345,6 +548,7 @@ export default {
       { id: 'page', area: ROUTES_AREA, data: { path: ROUTE }, render: () => jsx(Page, {}) },
       { id: 'nav', area: SIDEBAR_NAV_AREA, data: { path: ROUTE, label: 'Community bots', codicon: 'hubot' } },
       { id: 'share', area: PALETTE_AREA, data: { id: 'hm-share', label: 'Share this bot to hermesmade.lol', keywords: ['hermesmade', 'share', 'bot'], run: () => host.navigate(`${ROUTE}?tab=share`) } },
+      { id: 'grok', area: PALETTE_AREA, data: { id: 'hm-grok', label: 'Migrate bots from Grok Bot', keywords: ['grok', 'grokbot', 'migrate', 'import', 'bot'], run: () => host.navigate(`${ROUTE}?tab=grok`) } },
       { id: 'add', area: PALETTE_AREA, data: { id: 'hm-add', label: 'Add a community bot', keywords: ['hermesmade', 'add', 'bot'], run: () => host.navigate(ROUTE) } }
     ])
   }
