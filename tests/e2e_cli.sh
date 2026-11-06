@@ -20,8 +20,10 @@ inst() { # home
   mkdir -p "$1/bin"; printf '#!/bin/sh\ncd %s && exec %s/venv/bin/python -m hermes_cli.main "$@"\n' "$AG" "$AG" > "$1/bin/hermes"; chmod +x "$1/bin/hermes"
   curl -fsSL "$SITE/install.sh" | env -i HOME="$1" PATH="$1/bin:/usr/bin:/bin" HERMESMADE_URL="$SITE" sh 2>&1 | grep -v "out of sync" | tail -3
 }
-echo "## curl install.sh | sh (author)"; inst "$A"
-echo "## curl install.sh | sh (installer)"; inst "$I"
+printf "## site installer (author)\n"
+inst "$A"
+printf "## site installer (installer)\n"
+inst "$I"
 grep -A3 "^plugins:" "$A/.hermes/config.yaml"
 run "$A" profile create gardener --no-alias | tail -1
 P="$A/.hermes/profiles/gardener"

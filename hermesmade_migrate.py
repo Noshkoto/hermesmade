@@ -191,10 +191,13 @@ def _profile_for(bot_name: str) -> tuple[str, bool]:
     raise MigrateError("Could not find a free bot name.")
 
 
+_RESERVED_SLUGS = frozenset({"default", "hermes", "test", "tmp", "root", "admin"})
+
+
 def _slug(s: str) -> str:
     import re
     s = re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")[:40]
-    if not s or s in ("default", "hermes", "test", "tmp", "root", "sudo"):
+    if not s or s in _RESERVED_SLUGS:
         s = f"grok-{s or 'bot'}"
     if not s[0].isalpha():
         s = f"grok-{s}"
