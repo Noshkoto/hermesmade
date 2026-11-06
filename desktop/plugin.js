@@ -34,7 +34,8 @@ const FRIENDLY = [
   [/no Grok Bot export found/i, "That isn't a Grok Bot export yet. Paste the Bot's whole reply to the export prompt (the part with the JSON), or choose the file it saved."],
   [/looks cut off/i, 'That export looks cut off. Ask the Bot to send the rest, then paste every part here.'],
   [/credential-looking keys/i, 'That export contains something that looks like a key or password, so it was not read. Ask the Bot to export again and leave keys out.'],
-  [/Bot not found|HTTP 404/i, "That bot isn't on hermesmade.lol (it may have been removed). Browse the shelf for another."],
+  [/Bot not found|HTTP 404|^Not Found$/i, "That bot isn't on hermesmade.lol (it may have been removed). Browse the shelf for another."],
+  [/no name yet/i, 'Give this bot a title first (the box below), so people know what it is.'],
   [/Give a bot id/i, 'Paste a bot link from hermesmade.lol/bots, or its number.'],
   [/handle is required/i, 'Add your @handle (letters, digits or underscore) so people know who made it.'],
   [/Failed to fetch|ECONNREFUSED|timed out|URLError|Name or service/i, "Couldn't reach hermesmade.lol. Check your connection and try again."]
@@ -122,7 +123,7 @@ function AddPane({ initial }) {
     setState({ phase: 'loading' })
 
     try {
-      const pv = await rest(`/preview/${encodeURIComponent(id)}`)
+      const pv = await rest(`/preview?bot=${encodeURIComponent(id)}`)
       setState({ phase: 'preview', pv, name: pv.install_as })
     } catch (e) {
       setState({ phase: 'error', error: errText(e) })

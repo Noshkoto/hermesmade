@@ -21,6 +21,15 @@ def _err(e: Exception):
     raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/preview")
+async def preview_q(bot: str = ""):
+    """``?bot=<id or link>``: a pasted link's slashes survive a query string, not a path segment."""
+    try:
+        return await run_in_threadpool(H.preview, bot)
+    except H.ShareError as e:
+        _err(e)
+
+
 @router.get("/preview/{bot}")
 async def preview(bot: str):
     try:
