@@ -200,6 +200,12 @@ def _migrate_grok_cli(args) -> None:
     import sys
     import hermesmade_migrate as G
     try:
+        if not G.importer_installed():
+            print(f"Moving bots from Grok Bot uses the official {G.PLUGIN} plugin from the Hermes catalog.")
+            if not sys.stdin.isatty() or input(f"Install it now ({G.INSTALL_HINT})? [y/N] ").strip().lower() not in ("y", "yes"):
+                print(f"Not installed. Run `{G.INSTALL_HINT}`, then try again.")
+                raise SystemExit(1)
+            G.install_importer()
         if args.prompt:
             print(G.export_prompt())
             return

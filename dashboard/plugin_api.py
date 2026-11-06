@@ -84,10 +84,20 @@ def _grok(fn, *a, **kw):
         _err(e)
 
 
-@router.get("/grok/prompt")
-async def grok_prompt():
-    return {"prompt": await run_in_threadpool(_grok, lambda G: G.export_prompt),
+@router.get("/grok/status")
+async def grok_status():
+    import hermesmade_migrate as G
+    ok = await run_in_threadpool(G.importer_installed)
+    return {"importer": ok, "install_hint": G.INSTALL_HINT,
+            "prompt": (await run_in_threadpool(G.export_prompt)) if ok else "",
             "open_url": "https://x.ai/bot/link/v1/open"}
+
+
+@router.post("/grok/install-importer")
+async def grok_install_importer():
+    """Runs only from the user's click on "Install importer" in the desktop page."""
+    await run_in_threadpool(_grok, lambda G: G.install_importer)
+    return await grok_status()
 
 
 @router.get("/grok/downloads")

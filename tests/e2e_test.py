@@ -13,7 +13,7 @@ os.environ.pop("HERMES_HOME", None)
 os.environ["HERMES_SHARED_AUTH_DIR"] = str(SB / "shared-" + PHASE) if False else str(SB / ("shared-" + PHASE))
 os.environ.setdefault("HERMESMADE_URL", "http://localhost:8798")
 sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, "/home/openclaw/.hermes/hermes-agent")
+sys.path.insert(0, os.environ.get("HERMES_AGENT_DIR", os.path.expanduser("~/.hermes/hermes-agent")))
 FAKE_OR = "sk-or-v1-" + "a" * 48
 FAKE_DISCORD = "MTA" + "x" * 21 + ".AbCdEf." + "y" * 30
 LITERAL = "zq9" * 8  # opaque .env value with no vendor shape

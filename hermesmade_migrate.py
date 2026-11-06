@@ -5,7 +5,8 @@ itself: the user pastes the official export prompt into its chat and it replies 
 document. Reading and mapping that document is done by the official ``agent-importers`` plugin
 (NousResearch/hermes-official-plugins, MIT); this module only adds what that importer leaves to
 the user: a fresh profile per Bot, running on the installer's own model, shown in the desktop bot
-list. Nothing here talks to xAI, and no credential is ever read or written.
+list. Nothing here talks to xAI or any network service, and no credential is ever read or written.
+The importer is installed from the Hermes catalog only after the user says yes.
 
 Routines arrive paused (the Grok copy keeps running until the user turns it off). Event routines
 are written to a notes file to rebuild. Apps with a remote MCP URL come over as MCP servers; other
@@ -38,8 +39,13 @@ def _plugins_dir() -> Path:
 
 
 def _load_importer():
-    """The official importer's ``grok_bot`` module, loaded from the installed plugin."""
-    if _PKG_ALIAS in sys.modules and f"{_PKG_ALIAS}.grok_bot" in sys.modules:
+    """The official importer's ``grok_bot`` module: the copy Hermes already loaded when the plugin is
+    enabled, else the installed plugin's files (an installed-but-disabled plugin)."""
+    try:
+        return importlib.import_module("hermes_plugins.agent_importers.grok_bot")
+    except Exception:
+        pass
+    if f"{_PKG_ALIAS}.grok_bot" in sys.modules:
         return sys.modules[f"{_PKG_ALIAS}.grok_bot"]
     root = _plugins_dir() / PLUGIN
     if not (root / "grok_bot.py").is_file():
@@ -57,21 +63,42 @@ def _load_importer():
         raise
 
 
-def ensure_importer():
-    """The importer module, installing the plugin from the Hermes catalog (its reviewed pin) once."""
-    mod = _load_importer()
-    if mod is not None:
-        return mod
+class ImporterMissing(MigrateError):
+    """agent-importers is not installed; the caller asks the user before installing it."""
+
+
+INSTALL_HINT = f"hermes plugins install {PLUGIN}"
+
+
+def importer_installed() -> bool:
+    try:
+        return _load_importer() is not None
+    except Exception:
+        return False
+
+
+def install_importer() -> None:
+    """Install the official importer from the Hermes plugin catalog (its reviewed pin). Only call this
+    after the user said yes: the desktop button and the CLI prompt are that yes. Never prompts."""
+    if importer_installed():
+        return
     cmd = [sys.executable, "-m", "hermes_cli.main", "plugins", "install", PLUGIN, "--enable"]
     try:
         out = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as e:
-        raise MigrateError(f"Could not install the {PLUGIN} plugin: {e}") from e
+        raise MigrateError(f"Could not install {PLUGIN}: {e}. Run `{INSTALL_HINT}` yourself.") from e
+    if not importer_installed():
+        tail = (out.stderr or out.stdout or "").strip().splitlines()[-3:]
+        raise MigrateError(f"{PLUGIN} did not install. Run `{INSTALL_HINT}` and try again."
+                           + (f" ({' / '.join(tail)})" if tail else ""))
+
+
+def ensure_importer():
+    """The importer module, or ImporterMissing so the caller can ask before installing it."""
     mod = _load_importer()
     if mod is None:
-        tail = (out.stderr or out.stdout or "").strip().splitlines()[-3:]
-        raise MigrateError(f"The {PLUGIN} plugin did not install. Run `hermes plugins install {PLUGIN}` "
-                           "and try again." + (f" ({' / '.join(tail)})" if tail else ""))
+        raise ImporterMissing(f"Moving bots from Grok Bot uses the official {PLUGIN} plugin, which "
+                              f"is not installed. Install it with `{INSTALL_HINT}`.")
     return mod
 
 

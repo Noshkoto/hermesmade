@@ -4,7 +4,7 @@
 # Sandboxed HOMEs; never touches ~/.hermes. Usage: e2e_cli.sh <site-url> <admin-secret>
 set -uo pipefail
 SITE="$1"; ADMIN="$2"
-AG=/home/openclaw/.hermes/hermes-agent
+AG="${HERMES_AGENT_DIR:-$HOME/.hermes/hermes-agent}"
 SB=$(mktemp -d)
 run() { # home cmd...
   local h="$1"; shift

@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 SITE = os.environ.get("HERMESMADE_URL", "https://hermesmade.lol").rstrip("/")
 META_FILE = "hermesmade-bot.json"
-USER_AGENT = "hermesmade-plugin/1.1"
+USER_AGENT = "hermesmade-plugin/1.2"
 MAX_DOWNLOAD = 2_000_000
 MAX_PACKAGE = 1_500_000
 MAX_SKILL_BYTES = 400_000  # a single own-skill dir bigger than this is listed, not shipped
@@ -192,22 +192,19 @@ def scan_text_for_secrets(text: str) -> Optional[str]:
 
 
 def _env_values(profile: Path) -> list[str]:
-    """Literal secret VALUES from the profile's .env (and the root .env), used
-    to catch a key pasted into SOUL.md or a skill. Values are compared, never
-    stored or printed."""
-    vals = []
-    for p in {profile / ".env", _hermes_root() / ".env"}:
-        try:
-            for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                v = line.split("=", 1)[1].strip().strip('"').strip("'")
-                if len(v) >= 12 and not v.lower().startswith(("http://", "https://", "/", "~")) and " " not in v:
-                    vals.append(v)
-        except OSError:
-            continue
-    return vals
+    """Literal secret VALUES this profile can use, read through Hermes's own secret scope (the
+    profile's secrets plus the process environment Hermes loaded). Used only to catch a key pasted
+    into SOUL.md or a skill; values are compared in memory, never stored, logged or sent."""
+    vals = set()
+    try:
+        from agent.secret_scope import build_profile_secret_scope
+        vals.update(build_profile_secret_scope(profile).values())
+        if profile.resolve() != _hermes_root().resolve():
+            vals.update(build_profile_secret_scope(_hermes_root()).values())
+    except Exception:
+        pass
+    return [v for v in vals if isinstance(v, str) and len(v) >= 12 and " " not in v
+            and not v.lower().startswith(("http://", "https://", "/", "~"))]
 
 
 # ------------------------------------------------------------ skill picking --
@@ -422,7 +419,7 @@ def pack(profile_name: Optional[str] = None, *, title: str = "", tagline: str = 
         if hit:
             raise ShareError(f"Found what looks like a {hit} in {rel}. Remove it, then share again. Nothing was uploaded.")
         if any(v in text for v in literals):
-            raise ShareError(f"{rel} contains one of your .env values verbatim. Remove it, then share again. Nothing was uploaded.")
+            raise ShareError(f"{rel} contains one of your secret values verbatim. Remove it, then share again. Nothing was uploaded.")
 
     archive = work / f"{bot_name}-{version}.tar.gz"
     with tarfile.open(archive, "w:gz") as tf:

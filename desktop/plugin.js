@@ -313,13 +313,30 @@ function GrokPane() {
   const [st, setSt] = useState({ phase: 'idle' })
   const [names, setNames] = useState({})
   const [skip, setSkip] = useState({})
+  const [importer, setImporter] = useState({ phase: 'checking' })
+
+  const applyStatus = r => {
+    setImporter({ phase: r.importer ? 'ready' : 'missing', hint: r.install_hint })
+    setPrompt(r.prompt || '')
+    if (r.importer) {
+      CTX.rest('/grok/downloads').then(d => setFiles(d.files || [])).catch(() => {})
+    }
+  }
 
   useEffect(() => {
-    CTX.rest('/grok/prompt', { timeoutMs: 300000 })
-      .then(r => setPrompt(r.prompt))
-      .catch(e => setSt({ phase: 'error', error: errText(e) }))
-    CTX.rest('/grok/downloads').then(r => setFiles(r.files || [])).catch(() => {})
+    CTX.rest('/grok/status')
+      .then(applyStatus)
+      .catch(e => setImporter({ phase: 'error', error: errText(e) }))
   }, [])
+
+  const installImporter = async () => {
+    setImporter(s => ({ ...s, phase: 'installing' }))
+    try {
+      applyStatus(await CTX.rest('/grok/install-importer', { method: 'POST', timeoutMs: 300000 }))
+    } catch (e) {
+      setImporter(s => ({ ...s, phase: 'missing', error: errText(e) }))
+    }
+  }
 
   const copy = async () => {
     try {
@@ -374,6 +391,21 @@ function GrokPane() {
 
   const pv = st.pv
   const haveInput = text.trim() || files.length
+
+  if (importer.phase !== 'ready') {
+    return jsxs('div', {
+      style: { ...box, display: 'grid', gap: 10, maxWidth: 640 },
+      children: [
+        jsx('p', { style: { margin: 0, color: c.primary, fontWeight: 600 }, children: 'One-time setup' }),
+        jsx('p', { style: { margin: 0, color: c.secondary, fontSize: 13 }, children: 'Reading Grok Bot exports is done by agent-importers, the official Nous importer from the Hermes plugin catalog. Install it once to continue.' }),
+        importer.phase === 'checking'
+          ? jsxs('div', { style: { display: 'flex', gap: 8, alignItems: 'center', color: c.secondary }, children: [jsx(GlyphSpinner, {}), 'Checking…'] })
+          : jsx('div', { children: jsx(Button, { disabled: importer.phase === 'installing', onClick: installImporter, children: importer.phase === 'installing' ? 'Installing…' : 'Install importer' }) }),
+        importer.hint && jsx('p', { style: { margin: 0, color: c.tertiary, fontSize: 12 }, children: `Or in a terminal: ${importer.hint}` }),
+        importer.error && jsx('p', { style: { margin: 0, color: c.red, fontSize: 13 }, children: importer.error })
+      ]
+    })
+  }
 
   return jsxs('div', {
     style: { display: 'grid', gap: 12, maxWidth: 760 },
