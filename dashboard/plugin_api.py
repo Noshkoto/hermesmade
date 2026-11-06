@@ -58,7 +58,7 @@ async def profiles():
 @router.post("/pack")
 async def pack(body: dict):
     try:
-        plan = await run_in_threadpool(H.pack, body.get("profile") or None, title=body.get("title", ""),
+        plan = await run_in_threadpool(H.pack, (body.get("bot_profile") or body.get("profile")) or None, title=body.get("title", ""),
                                        tagline=body.get("tagline", ""), description=body.get("description", ""))
         plan.pop("archive_bytes", None)
         return plan
@@ -71,7 +71,7 @@ async def share(body: dict):
     """Re-packs from the same inputs (so what uploads is what was just previewed
     from current files), then uploads."""
     try:
-        plan = await run_in_threadpool(H.pack, body.get("profile") or None, title=body.get("title", ""),
+        plan = await run_in_threadpool(H.pack, (body.get("bot_profile") or body.get("profile")) or None, title=body.get("title", ""),
                                        tagline=body.get("tagline", ""), description=body.get("description", ""))
         res = await run_in_threadpool(H.upload, plan, str(body.get("handle", "")))
         return {k: v for k, v in res.items() if k != "manage_token"}

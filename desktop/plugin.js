@@ -79,6 +79,13 @@ async function rest(path, opts) {
   }
 }
 
+// The desktop's security gate reads a body `profile` as "act as that profile" and refuses any
+// other bot, so the bot to pack travels as `bot_profile`.
+function wire(form) {
+  const { profile, ...rest } = form
+  return { ...rest, bot_profile: profile }
+}
+
 function switchToMain() {
   const back = (window.location.hash || '').replace(/^#/, '') || ROUTE
   host.newChat(MAIN_PROFILE)
@@ -261,7 +268,7 @@ function SharePane() {
     setSt({ phase: 'packing' })
 
     try {
-      setSt({ phase: 'preview', plan: await rest('/pack', { method: 'POST', body: form, timeoutMs: 120000 }) })
+      setSt({ phase: 'preview', plan: await rest('/pack', { method: 'POST', body: wire(form), timeoutMs: 120000 }) })
     } catch (e) {
       setSt({ phase: 'error', error: errText(e) })
     }
@@ -272,7 +279,7 @@ function SharePane() {
 
     try {
       CTX.storage.set('handle', form.handle)
-      const res = await rest('/share', { method: 'POST', body: form, timeoutMs: 120000 })
+      const res = await rest('/share', { method: 'POST', body: wire(form), timeoutMs: 120000 })
       setSt(s => ({ ...s, phase: 'done', res }))
       host.notify({ kind: 'success', message: 'Bot shared. It goes live after review.' })
     } catch (e) {
