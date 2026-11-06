@@ -34,7 +34,8 @@ const FRIENDLY = [
   [/no Grok Bot export found/i, "That isn't a Grok Bot export yet. Paste the Bot's whole reply to the export prompt (the part with the JSON), or choose the file it saved."],
   [/looks cut off/i, 'That export looks cut off. Ask the Bot to send the rest, then paste every part here.'],
   [/credential-looking keys/i, 'That export contains something that looks like a key or password, so it was not read. Ask the Bot to export again and leave keys out.'],
-  [/Bot not found|HTTP 404|^Not Found$/i, "That bot isn't on hermesmade.lol (it may have been removed). Browse the shelf for another."],
+  [/Bot not found|HTTP 404/i, "That bot isn't on hermesmade.lol (it may have been removed). Browse the shelf for another."],
+  [/^Not Found$/i, 'Hermes is still running an older copy of this plugin. Restart the Hermes app (or run `hermes gateway restart`), then try again.'],
   [/no name yet/i, 'Give this bot a title first (the box below), so people know what it is.'],
   [/Give a bot id/i, 'Paste a bot link from hermesmade.lol/bots, or its number.'],
   [/handle is required/i, 'Add your @handle (letters, digits or underscore) so people know who made it.'],
@@ -86,6 +87,20 @@ function wire(form) {
   return { ...fields, bot_profile: profile }
 }
 
+// The backend can be older than this page (a gateway started before an update keeps the old
+// routes until it restarts). A bare "Not Found" from /preview?bot= is that, not a missing bot:
+// fall back to the original /preview/<id> route, which every version has.
+async function previewBot(ref) {
+  try {
+    return await rest(`/preview?bot=${encodeURIComponent(ref)}`)
+  } catch (e) {
+    const m = String((e && (e.detail || e.message)) || e)
+    if (!/Not Found/.test(m) || /Bot not found/i.test(m)) throw e
+    const short = String(ref).match(/(?:bots|add)\/(\d+)/)?.[1] || (/^\d+$/.test(String(ref).trim()) ? String(ref).trim() : null)
+    return await rest(`/preview/${encodeURIComponent(short || ref)}`)
+  }
+}
+
 function switchToMain() {
   const back = (window.location.hash || '').replace(/^#/, '') || ROUTE
   host.newChat(MAIN_PROFILE)
@@ -130,7 +145,7 @@ function AddPane({ initial }) {
     setState({ phase: 'loading' })
 
     try {
-      const pv = await rest(`/preview?bot=${encodeURIComponent(id)}`)
+      const pv = await previewBot(id)
       setState({ phase: 'preview', pv, name: pv.install_as })
     } catch (e) {
       setState({ phase: 'error', error: errText(e) })
