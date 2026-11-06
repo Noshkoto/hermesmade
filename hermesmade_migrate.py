@@ -127,7 +127,8 @@ def _sources(texts: Optional[list[str]], files: Optional[list[str]], tmp: Path, 
         p = Path(f).expanduser()
         if not p.exists():
             raise MigrateError(f"No file at {p}")
-        out.extend(mod.find_export_files(p))
+        # A file the user chose is read as-is (find_export_files only lists export-named files).
+        out.extend([p] if p.is_file() else mod.find_export_files(p))
     return out
 
 

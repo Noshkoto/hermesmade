@@ -1,7 +1,7 @@
 name: hermesmade
 label: hermesmade bots
 kind: standalone
-version: 1.2.2
+version: 1.2.3
 manifest_version: 2
 description: >
   Share your Hermes bots to the community shelf at hermesmade.lol and add other
