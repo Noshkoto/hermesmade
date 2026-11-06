@@ -278,8 +278,17 @@ SCHEMA = {
 }
 
 
+def _unattended(kw: dict) -> bool:
+    """A cron run has nobody to confirm with, so ``user_confirmed`` there is the model's word alone."""
+    agent = kw.get("parent_agent")
+    return str(getattr(agent, "platform", "") or "").strip().lower() == "cron"
+
+
 def _tool(args: dict, **_kw) -> str:
     act = args.get("action")
+    if act in ("share", "add") and _unattended(_kw):
+        return json.dumps({"error": f"action={act} needs a person to confirm, so it does not run in "
+                                    "scheduled (cron) jobs. Run /sharebot or the desktop page instead."})
     try:
         if act == "preview":
             plan = H.pack(args.get("profile"), tagline=args.get("tagline", ""), description=args.get("description", ""))

@@ -1,7 +1,7 @@
 name: hermesmade
 label: hermesmade bots
 kind: standalone
-version: 1.2.5
+version: 1.2.6
 manifest_version: 2
 description: >
   Share your Hermes bots to the community shelf at hermesmade.lol and add other
@@ -12,7 +12,7 @@ description: >
 author: "@HermesAgentTips"
 license: MIT
 homepage: https://hermesmade.lol/bots
-requires_hermes: ">=0.22.0"
+requires_hermes: ">=0.22.1"
 provides_tools:
   - hermesmade_bots
 provides_hooks: []
