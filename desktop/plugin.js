@@ -524,23 +524,39 @@ function Page() {
   const [tab, setTab] = useState('add')
   const [addRef, setAddRef] = useState('')
 
+  // A deep link can arrive while this page is already open (the router changes the hash with
+  // pushState, which fires no hashchange), so re-read the query on every navigation signal and on
+  // a short poll while mounted. The latest link always wins.
   useEffect(() => {
+    let last = ''
     const sync = () => {
+      const h = window.location.hash || ''
+      if (h === last) {
+        return
+      }
+      last = h
       const q = readQuery()
       const add = q.get('add')
+      const t = q.get('tab')
 
       if (add) {
         setTab('add')
         setAddRef(add)
-      } else if (q.get('tab') === 'share' || q.get('tab') === 'grok') {
-        setTab(q.get('tab'))
+      } else if (t === 'share' || t === 'grok' || t === 'add') {
+        setTab(t)
       }
     }
 
     sync()
     window.addEventListener('hashchange', sync)
+    window.addEventListener('popstate', sync)
+    const timer = setInterval(sync, 400)
 
-    return () => window.removeEventListener('hashchange', sync)
+    return () => {
+      window.removeEventListener('hashchange', sync)
+      window.removeEventListener('popstate', sync)
+      clearInterval(timer)
+    }
   }, [])
 
   const tabBtn = (id, text) =>
