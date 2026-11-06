@@ -9,7 +9,7 @@
  * No hardcoded colours: theme vars only. One import surface: @hermes/plugin-sdk.
  */
 import * as sdk from '@hermes/plugin-sdk'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 const ROUTE = '/hermesmade'
@@ -373,6 +373,11 @@ function GrokPane() {
   const [names, setNames] = useState({})
   const [skip, setSkip] = useState({})
   const [importer, setImporter] = useState({ phase: 'checking' })
+  // Exports read right here in the app (Choose file / drop). Hermes may run on another machine,
+  // so a path from this computer means nothing to it; the text does.
+  const [picked, setPicked] = useState([])
+  const [dragging, setDragging] = useState(false)
+  const fileInput = useRef(null)
 
   const scanDownloads = async quiet => {
     setScan({ phase: 'scanning' })
@@ -453,16 +458,38 @@ function GrokPane() {
     })
   }
 
-  const chooseFile = async () => {
-    const path = await CTX.os.pickOpenPath({ title: 'Choose a Grok Bot export', filters: [{ name: 'Grok Bot export', extensions: ['json', 'md', 'txt'] }] })
-    if (path) {
-      setText('')
-      setFiles(f => (f.includes(path) ? f : [...f, path]))
-      setScan({ phase: 'done', n: 1, picked: true })
+  const addPicked = async list => {
+    const read = []
+    for (const f of Array.from(list || [])) {
+      if (f.size > 2 * 1024 * 1024) {
+        host.notify({ kind: 'error', message: `${f.name} is too large (2 MB max).` })
+        continue
+      }
+      try {
+        read.push({ name: f.name, text: await f.text() })
+      } catch {
+        host.notify({ kind: 'error', message: `Could not read ${f.name}.` })
+      }
+    }
+    if (read.length) {
+      setPicked(cur => [...cur.filter(c => !read.some(r => r.name === c.name)), ...read])
+      setSt({ phase: 'idle' })
     }
   }
 
-  const source = () => (text.trim() ? { text } : { files })
+  const chooseFile = () => fileInput.current?.click()
+
+  const onDrop = e => {
+    e.preventDefault()
+    setDragging(false)
+    void addPicked(e.dataTransfer?.files)
+  }
+
+  // Everything the user gave us at once: pasted reply, files chosen or dropped here, and exports Hermes found.
+  const source = () => ({
+    texts: [text, ...picked.map(f => f.text)].filter(t => t && t.trim()),
+    files: picked.length || text.trim() ? [] : files
+  })
 
   const check = async () => {
     setSt({ phase: 'reading' })
@@ -497,7 +524,14 @@ function GrokPane() {
 
   const pv = st.pv
   const haveText = Boolean(text.trim())
-  const haveInput = haveText || files.length > 0
+  const haveInput = haveText || picked.length > 0 || files.length > 0
+  const reviewLabel = () => {
+    if (st.phase === 'reading') return 'Reading…'
+    const n = picked.length + (haveText ? 1 : 0)
+    if (n) return haveText && !picked.length ? 'Review pasted reply' : `Review ${n === 1 ? 'export' : `${n} exports`}`
+    if (files.length) return `Review ${files.length === 1 ? 'export' : `${files.length} exports`}`
+    return 'Review export'
+  }
 
   if (importer.phase !== 'ready') {
     return jsxs('div', {
@@ -518,15 +552,19 @@ function GrokPane() {
     if (scan.phase === 'scanning' && !scan.quiet) {
       return jsxs('span', { style: { display: 'inline-flex', gap: 6, alignItems: 'center', color: c.tertiary, fontSize: 13 }, children: [jsx(GlyphSpinner, {}), 'Looking in Downloads…'] })
     }
+    if (picked.length) {
+      return jsxs('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }, children: [
+        jsx('p', { style: { margin: 0, color: c.green, fontSize: 13 }, children: `Ready: ${picked.map(f => f.name).join(', ')}` }),
+        jsx(Button, { variant: 'ghost', size: 'sm', onClick: () => setPicked([]), children: 'Clear' })
+      ] })
+    }
     if (files.length) {
       return jsx('p', { style: { margin: 0, color: c.green, fontSize: 13 }, children: `Ready: ${files.length} export${files.length === 1 ? '' : 's'} (${files.map(f => f.split(/[\\/]/).pop()).join(', ')})` })
     }
     if (scan.phase === 'done' && !scan.quiet) {
-      return jsx('p', { style: { margin: 0, color: c.tertiary, fontSize: 13 }, children: 'No export in Downloads yet. When the Bot replies, paste its reply below or choose the file it saved.' })
+      return jsx('p', { style: { margin: 0, color: c.tertiary, fontSize: 13 }, children: 'Nothing found yet. Choose the file Grok Bot saved (usually in Downloads), drop it here, or paste the Bot\'s reply.' })
     }
-    return opened
-      ? jsx('p', { style: { margin: 0, color: c.tertiary, fontSize: 13 }, children: 'Watching Downloads for the export…' })
-      : null
+    return jsx('p', { style: { margin: 0, color: c.tertiary, fontSize: 13 }, children: 'Choose or drop the file Grok Bot saved (usually in Downloads), or paste the Bot\'s reply.' })
   }
 
   return jsxs('div', {
@@ -560,16 +598,26 @@ function GrokPane() {
         title: 'Bring the export back',
         done: st.phase === 'done',
         children: jsxs('div', {
-          style: { display: 'grid', gap: 8 },
+          onDragOver: e => {
+            e.preventDefault()
+            setDragging(true)
+          },
+          onDragLeave: () => setDragging(false),
+          onDrop,
+          style: { display: 'grid', gap: 8, borderRadius: 10, outline: dragging ? `2px dashed ${c.accent}` : 'none', outlineOffset: 6 },
           children: [
+            jsx('input', { ref: fileInput, type: 'file', multiple: true, accept: '.json,.md,.txt,application/json,text/plain,text/markdown', style: { display: 'none' }, onChange: e => {
+              void addPicked(e.target.files)
+              e.target.value = ''
+            } }),
             fileLine(),
             jsx(Textarea, { rows: 4, value: text, placeholder: 'Or paste the Bot\'s whole reply here (paste several replies one after another)', onChange: e => setText(e.target.value) }),
             jsxs('div', {
               style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
               children: [
-                jsx(Button, { disabled: !haveInput || st.phase === 'reading' || st.phase === 'migrating', onClick: check, children: st.phase === 'reading' ? 'Reading…' : haveText ? 'Review pasted reply' : files.length ? `Review ${files.length === 1 ? 'export' : `${files.length} exports`}` : 'Review bots' }),
-                jsx(Button, { variant: 'ghost', disabled: scan.phase === 'scanning', onClick: () => void scanDownloads(false), children: scan.phase === 'scanning' ? 'Looking…' : 'Check Downloads' }),
-                jsx(Button, { variant: 'ghost', onClick: chooseFile, children: 'Choose file…' })
+                jsx(Button, { onClick: chooseFile, variant: haveInput ? 'ghost' : undefined, children: 'Choose file…' }),
+                jsx(Button, { variant: haveInput ? undefined : 'secondary', disabled: !haveInput || st.phase === 'reading' || st.phase === 'migrating', onClick: check, children: reviewLabel() }),
+                jsx(Button, { variant: 'ghost', disabled: scan.phase === 'scanning', onClick: () => void scanDownloads(false), children: scan.phase === 'scanning' ? 'Looking…' : 'Check Downloads' })
               ]
             })
           ]

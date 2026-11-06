@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
@@ -114,16 +115,24 @@ async def grok_downloads():
     return {"files": await run_in_threadpool(_grok, lambda G: G.find_downloads)}
 
 
+def _texts(body: dict) -> Optional[list]:
+    """Pasted replies and files the desktop read itself (``texts``), plus the older single ``text``."""
+    out = [str(t) for t in (body.get("texts") or []) if str(t or "").strip()]
+    if str(body.get("text") or "").strip():
+        out.append(str(body["text"]))
+    return out or None
+
+
 @router.post("/grok/preview")
 async def grok_preview(body: dict):
-    return await run_in_threadpool(_grok, lambda G: G.preview, texts=[str(body.get("text") or "")] if body.get("text") else None,
+    return await run_in_threadpool(_grok, lambda G: G.preview, texts=_texts(body),
                                    files=list(body.get("files") or []) or None)
 
 
 @router.post("/grok/migrate")
 async def grok_migrate(body: dict):
     out = await run_in_threadpool(
-        _grok, lambda G: G.migrate, texts=[str(body.get("text") or "")] if body.get("text") else None,
+        _grok, lambda G: G.migrate, texts=_texts(body),
         files=list(body.get("files") or []) or None, only=list(body.get("only") or []) or None,
         names=dict(body.get("names") or {}), activate_routines=False)
     return out
