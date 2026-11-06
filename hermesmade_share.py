@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 SITE = os.environ.get("HERMESMADE_URL", "https://hermesmade.lol").rstrip("/")
 META_FILE = "hermesmade-bot.json"
-USER_AGENT = "hermesmade-plugin/1.2.1"
+USER_AGENT = "hermesmade-plugin/1.2.2"
 MAX_DOWNLOAD = 2_000_000
 MAX_PACKAGE = 1_500_000
 MAX_SKILL_BYTES = 400_000  # a single own-skill dir bigger than this is listed, not shipped
@@ -547,14 +547,33 @@ def _scan_skills(root: Path) -> list[dict]:
     return out
 
 
-def _free_name(want: str) -> str:
+def _clear_failed_install(name: str) -> None:
+    """Remove what an earlier failed add left at a deleted name: the distribution installer of
+    older plugin versions wrote the payload into profiles/<name> while profiles/.deleted/<name> still
+    marked it deleted, so Hermes refused it on every retry. Only a directory that is still marked
+    deleted, holds a hermesmade/distribution payload, and has no sessions or memories is touched."""
     from hermes_cli import profiles as P
-    existing = {i.name for i in P.list_profiles()}
-    if want not in existing:
-        return want
-    for n in range(2, 100):
-        cand = f"{want}-{n}"[:42]
-        if cand not in existing:
+    d = P.get_profile_dir(name)
+    if not d.is_dir() or not P.named_profile_is_deleted(d) or not (d / "distribution.yaml").is_file():
+        return
+    if any((d / "sessions").glob("*")) or any((d / "memories").glob("*")) or (d / "state.db").exists():
+        return
+    shutil.rmtree(d)
+
+
+def _free_name(want: str) -> str:
+    """First name with no live profile and no leftover directory. A name the user deleted earlier
+    (a tombstone in profiles/.deleted) is free again: create_profile clears it."""
+    from hermes_cli import profiles as P
+
+    def taken(n: str) -> bool:
+        if P.profile_exists(n):
+            return True
+        d = P.get_profile_dir(n)
+        return d.exists() and not P.named_profile_is_deleted(d)
+
+    for cand in [want] + [f"{want}-{n}"[:42] for n in range(2, 100)]:
+        if not taken(cand):
             return cand
     raise ShareError("Could not find a free profile name.")
 
@@ -610,8 +629,26 @@ def install(bot_ref: str, *, name: Optional[str] = None, allow_caution: bool = T
                 sc["enabled"] = False
         (root / "config.yaml").write_text(_yaml_dump(cfg), encoding="utf-8")
         (root / META_FILE).unlink(missing_ok=True)
-        plan = D.install_distribution(str(root), name=target, force=False, create_alias=False)
+        # Create the profile through Hermes first (it clears a tombstone left by an earlier delete of
+        # the same name, which the distribution installer alone refuses), then lay the bot over it.
+        _clear_failed_install(target)
+        created = False
+        try:
+            P.create_profile(name=target, no_alias=True, no_skills=True)
+            created = True
+            plan = D.install_distribution(str(root), name=target, force=True, create_alias=False)
+        except Exception:
+            if created:
+                try:
+                    P.delete_profile(target, yes=True)
+                except Exception:
+                    pass
+            raise
     pdir = Path(plan.target_dir)
+    try:  # --no-skills marker: drop it so bundled skills seed below like any new profile
+        (pdir / ".no-bundled-skills").unlink(missing_ok=True)
+    except OSError:
+        pass
     # Bundled skills, then the bot's identity in the desktop roster.
     try:
         P.seed_profile_skills(pdir, quiet=True)
