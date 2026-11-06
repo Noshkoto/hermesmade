@@ -59,6 +59,31 @@ const errText = e => {
   return hit ? hit[1] : m.charAt(0).toUpperCase() + m.slice(1)
 }
 
+// The plugin's backend lives in the profile it was installed into (your main one). When a bot is
+// the active profile, its backend has no hermesmade and answers "Plugin not found", so say that
+// plainly and offer the switch instead of a raw 404 on every button.
+const MAIN_PROFILE = 'default'
+let onWrongProfile = null
+
+async function rest(path, opts) {
+  try {
+    return await CTX.rest(path, opts)
+  } catch (e) {
+    const m = String((e && (e.detail || e.message)) || e)
+    if (/Plugin not found/i.test(m)) {
+      onWrongProfile?.(host.state.profile.get())
+      throw new Error('Community bots runs on your main Hermes profile. Switch back to it to continue.')
+    }
+    throw e
+  }
+}
+
+function switchToMain() {
+  const back = (window.location.hash || '').replace(/^#/, '') || ROUTE
+  host.newChat(MAIN_PROFILE)
+  setTimeout(() => host.navigate(back.startsWith(ROUTE) ? back : ROUTE), 600)
+}
+
 function readQuery() {
   const h = window.location.hash || ''
   const q = h.includes('?') ? h.slice(h.indexOf('?') + 1) : ''
@@ -97,7 +122,7 @@ function AddPane({ initial }) {
     setState({ phase: 'loading' })
 
     try {
-      const pv = await CTX.rest(`/preview/${encodeURIComponent(id)}`)
+      const pv = await rest(`/preview/${encodeURIComponent(id)}`)
       setState({ phase: 'preview', pv, name: pv.install_as })
     } catch (e) {
       setState({ phase: 'error', error: errText(e) })
@@ -115,7 +140,7 @@ function AddPane({ initial }) {
     setState(s => ({ ...s, phase: 'installing' }))
 
     try {
-      const out = await CTX.rest('/install', { method: 'POST', body: { bot: ref, name: state.name }, timeoutMs: 180000 })
+      const out = await rest('/install', { method: 'POST', body: { bot: ref, name: state.name }, timeoutMs: 180000 })
       setState(s => ({ ...s, phase: 'done', out }))
       sdk.haptic?.('success')
       host.notify({ kind: 'success', message: `Added ${out.title || out.profile}` })
@@ -221,7 +246,7 @@ function SharePane() {
   const [st, setSt] = useState({ phase: 'idle' })
 
   useEffect(() => {
-    CTX.rest('/profiles').then(r => setProfiles(r.profiles || [])).catch(() => {})
+    rest('/profiles').then(r => setProfiles(r.profiles || [])).catch(() => {})
     const h = CTX.storage.get('handle', '')
 
     if (h) {
@@ -235,7 +260,7 @@ function SharePane() {
     setSt({ phase: 'packing' })
 
     try {
-      setSt({ phase: 'preview', plan: await CTX.rest('/pack', { method: 'POST', body: form, timeoutMs: 120000 }) })
+      setSt({ phase: 'preview', plan: await rest('/pack', { method: 'POST', body: form, timeoutMs: 120000 }) })
     } catch (e) {
       setSt({ phase: 'error', error: errText(e) })
     }
@@ -246,7 +271,7 @@ function SharePane() {
 
     try {
       CTX.storage.set('handle', form.handle)
-      const res = await CTX.rest('/share', { method: 'POST', body: form, timeoutMs: 120000 })
+      const res = await rest('/share', { method: 'POST', body: form, timeoutMs: 120000 })
       setSt(s => ({ ...s, phase: 'done', res }))
       host.notify({ kind: 'success', message: 'Bot shared. It goes live after review.' })
     } catch (e) {
@@ -344,7 +369,7 @@ function GrokPane() {
   const scanDownloads = async quiet => {
     setScan({ phase: 'scanning' })
     try {
-      const d = await CTX.rest('/grok/downloads')
+      const d = await rest('/grok/downloads')
       const found = d.files || []
       setFiles(found)
       setScan({ phase: 'done', n: found.length, quiet })
@@ -364,7 +389,7 @@ function GrokPane() {
   }
 
   useEffect(() => {
-    CTX.rest('/grok/status')
+    rest('/grok/status')
       .then(applyStatus)
       .catch(e => setImporter({ phase: 'error', error: errText(e) }))
   }, [])
@@ -390,7 +415,7 @@ function GrokPane() {
   const installImporter = async () => {
     setImporter(s => ({ ...s, phase: 'installing' }))
     try {
-      applyStatus(await CTX.rest('/grok/install-importer', { method: 'POST', timeoutMs: 300000 }))
+      applyStatus(await rest('/grok/install-importer', { method: 'POST', timeoutMs: 300000 }))
     } catch (e) {
       setImporter(s => ({ ...s, phase: 'missing', error: errText(e) }))
     }
@@ -434,7 +459,7 @@ function GrokPane() {
   const check = async () => {
     setSt({ phase: 'reading' })
     try {
-      const pv = await CTX.rest('/grok/preview', { method: 'POST', body: source(), timeoutMs: 120000 })
+      const pv = await rest('/grok/preview', { method: 'POST', body: source(), timeoutMs: 120000 })
       setNames(Object.fromEntries(pv.bots.map(b => [b.name, b.profile])))
       setSkip({})
       setSt({ phase: 'preview', pv })
@@ -448,7 +473,7 @@ function GrokPane() {
     const only = pv.bots.filter(b => !skip[b.name]).map(b => b.name)
     setSt(s => ({ ...s, phase: 'migrating', error: null }))
     try {
-      const out = await CTX.rest('/grok/migrate', {
+      const out = await rest('/grok/migrate', {
         method: 'POST',
         body: { ...source(), only, names: Object.fromEntries(pv.bots.filter(b => !b.existing).map(b => [b.name, names[b.name]])) },
         timeoutMs: 300000
@@ -615,6 +640,26 @@ function GrokPane() {
 function Page() {
   const [tab, setTab] = useState('add')
   const [addRef, setAddRef] = useState('')
+  const [wrong, setWrong] = useState(null)
+  const [epoch, setEpoch] = useState(0)
+
+  useEffect(() => {
+    onWrongProfile = profile => setWrong(profile || 'a bot')
+    const unsub = host.state.profile.subscribe?.(pr => {
+      if (pr === MAIN_PROFILE) {
+        setWrong(w => {
+          if (w) {
+            setEpoch(x => x + 1)
+          }
+          return null
+        })
+      }
+    })
+    return () => {
+      onWrongProfile = null
+      unsub?.()
+    }
+  }, [])
 
   // A deep link can arrive while this page is already open (the router changes the hash with
   // pushState, which fires no hashchange), so re-read the query on every navigation signal and on
@@ -674,7 +719,16 @@ function Page() {
       jsx('h1', { style: { margin: '0 0 4px', fontSize: 24, color: c.primary }, children: 'Community bots' }),
       jsx('p', { style: { margin: '0 0 18px', color: c.tertiary, fontSize: 13 }, children: 'Add bots people made on hermesmade.lol, or share one of yours.' }),
       jsxs('div', { style: { borderBottom: `1px solid ${c.stroke}`, marginBottom: 18 }, children: [tabBtn('add', 'Add a bot'), tabBtn('share', 'Share a bot'), tabBtn('grok', 'Move from Grok Bot')] }),
-      tab === 'add' ? jsx(AddPane, { initial: addRef }) : tab === 'grok' ? jsx(GrokPane, {}) : jsx(SharePane, {})
+      wrong &&
+        jsxs('div', {
+          role: 'alert',
+          style: { ...box, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 },
+          children: [
+            jsx('span', { style: { color: c.primary, fontSize: 13, flex: '1 1 320px' }, children: `You're on “${wrong}”. Community bots runs on your main Hermes profile, so switch back to add, share or move bots.` }),
+            jsx(Button, { onClick: switchToMain, children: 'Switch to main profile' })
+          ]
+        }),
+      tab === 'add' ? jsx(AddPane, { initial: addRef }, `a${epoch}`) : tab === 'grok' ? jsx(GrokPane, {}, `g${epoch}`) : jsx(SharePane, {}, `s${epoch}`)
     ]
   })
 }
